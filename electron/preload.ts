@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld('pathkeeper', {
   ai: {
     sendMessage: (systemPrompt: string, messages: unknown) =>
       ipcRenderer.invoke('ai:sendMessage', systemPrompt, messages),
+    startPreworkGrill: (taskId: string) =>
+      ipcRenderer.invoke('ai:startPreworkGrill', taskId),
+    submitGrillAnswer: (taskId: string, answer: string) =>
+      ipcRenderer.invoke('ai:submitGrillAnswer', taskId, answer),
+    cancelGrill: (taskId: string) =>
+      ipcRenderer.invoke('ai:cancelGrill', taskId),
     onStreamChunk: (cb: (chunk: string) => void) => {
       ipcRenderer.on('ai:stream-chunk', (_event, chunk) => cb(chunk));
     },

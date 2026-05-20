@@ -25,8 +25,9 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
     setMessages(ordered);
     messagesRef.current = ordered;
 
-    const apiKey = await window.pathkeeper.db.getSetting('anthropic_api_key');
-    setHasApiKey(!!apiKey);
+    const anthropicKey = await window.pathkeeper.db.getSetting('anthropic_api_key');
+    const geminiKey = await window.pathkeeper.db.getSetting('gemini_api_key');
+    setHasApiKey(!!anthropicKey || !!geminiKey);
   }, []);
 
   const sendMessage = useCallback(async (userText: string) => {
@@ -101,9 +102,10 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
     }
   }, [focus, goals, streaks, isLoading]);
 
-  const setApiKey = useCallback(async (key: string) => {
+  const setApiKey = useCallback(async (anthropicKey: string, geminiKey: string) => {
     if (!isElectron) return;
-    await window.pathkeeper.db.setSetting('anthropic_api_key', key);
+    await window.pathkeeper.db.setSetting('anthropic_api_key', anthropicKey);
+    await window.pathkeeper.db.setSetting('gemini_api_key', geminiKey);
     setHasApiKey(true);
   }, []);
 

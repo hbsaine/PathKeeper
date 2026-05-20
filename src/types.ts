@@ -100,6 +100,9 @@ export interface PathkeeperAPI {
   };
   ai: {
     sendMessage: (systemPrompt: string, messages: { role: string; content: string }[]) => Promise<string>;
+    startPreworkGrill: (taskId: string) => Promise<string>;
+    submitGrillAnswer: (taskId: string, answer: string) => Promise<{ completed: boolean; nextQuestion?: string }>;
+    cancelGrill: (taskId: string) => Promise<void>;
     onStreamChunk: (cb: (chunk: string) => void) => void;
     onStreamDone: (cb: () => void) => void;
     removeStreamListeners: () => void;

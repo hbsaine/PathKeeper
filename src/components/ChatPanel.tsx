@@ -10,7 +10,7 @@ interface Props {
   isLoading: boolean;
   hasApiKey: boolean | null;
   onSend: (text: string) => void;
-  onSetApiKey: (key: string) => void;
+  onSetApiKey: (anthropicKey: string, geminiKey: string) => void;
 }
 
 export default function ChatPanel({

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
 import * as db from './db';
 import * as ai from './ai';
+import * as gemini from './gemini';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -64,6 +65,7 @@ function registerIPC(win: BrowserWindow) {
   ipcMain.handle('db:setSetting', (_e, key, value) => {
     db.setSetting(key, value);
     if (key === 'anthropic_api_key') ai.setApiKey(value);
+    if (key === 'gemini_api_key') gemini.setGeminiApiKey(value);
   });
 
   // AI handler
@@ -78,6 +80,34 @@ function registerIPC(win: BrowserWindow) {
       }
       throw err;
     }
+  });
+
+  ipcMain.handle('ai:startPreworkGrill', async (_e, taskId) => {
+    try {
+      return await gemini.startPreworkGrill(taskId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === 'NO_GEMINI_API_KEY' || message.includes('NO_GEMINI_API_KEY')) {
+        return '__NO_GEMINI_API_KEY__';
+      }
+      throw err;
+    }
+  });
+
+  ipcMain.handle('ai:submitGrillAnswer', async (_e, taskId, answer) => {
+    try {
+      return await gemini.submitGrillAnswer(taskId, answer, win);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === 'NO_GEMINI_API_KEY' || message.includes('NO_GEMINI_API_KEY')) {
+        return '__NO_GEMINI_API_KEY__';
+      }
+      throw err;
+    }
+  });
+
+  ipcMain.handle('ai:cancelGrill', async (_e, taskId) => {
+    return await gemini.cancelGrill(taskId);
   });
 }
 
