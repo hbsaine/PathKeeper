@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #08070d;
+  color: #e8e4f0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ─────────────────────────────── */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(147, 51, 234, 0.35);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 51, 234, 0.6);
+}
+
+/* ── Electron drag ──────────────────────────── */
+.drag-region  { -webkit-app-region: drag; }
+.no-drag      { -webkit-app-region: no-drag; }
+
+/* ── Panel ──────────────────────────────────── */
+.panel {
+  background: #0f0e18;
+  border: 1px solid rgba(147, 51, 234, 0.1);
+  border-radius: 12px;
+  position: relative;
+  transition: border-color 300ms ease;
+}
+.panel:hover {
+  border-color: rgba(147, 51, 234, 0.22);
+}
+
+.panel-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6b6580;
+}
+
+/* ── Logo gold shimmer ──────────────────────── */
+@keyframes goldShimmer {
+  0%   { background-position: -300% center; }
+  100% { background-position: 300% center; }
+}
+.logo-initial {
+  background: linear-gradient(
+    90deg,
+    #8a6010 0%,
+    #f5d76e 30%,
+    #d4a017 50%,
+    #f5d76e 70%,
+    #8a6010 100%
+  );
+  background-size: 300% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: goldShimmer 4s linear infinite;
+}
+
+/* ── Alchemy rotation ───────────────────────── */
+@keyframes alchemyRotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.alchemy-rotate {
+  animation: alchemyRotate 60s linear infinite;
+  transform-origin: center;
+}
+.spin-slow {
+  display: inline-block;
+  animation: alchemyRotate 8s linear infinite;
+}
+
+/* ── Task complete pulse ────────────────────── */
+@keyframes checkPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.9); }
+  60%  { box-shadow: 0 0 0 9px rgba(147, 51, 234, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(147, 51, 234, 0); }
+}
+.check-pulse {
+  animation: checkPulse 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* ── Fade animations ────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up { animation: fadeInUp 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ── Blink cursor ───────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+.cursor-blink { animation: blink 1s step-end infinite; }
+
+/* ── Input focus pulse ──────────────────────── */
+@keyframes focusPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.5); }
+  70%  { box-shadow: 0 0 0 5px rgba(147, 51, 234, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(147, 51, 234, 0); }
+}
+
+/* ── Markdown code ──────────────────────────── */
+.md-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: #16142a;
+  border: 1px solid rgba(147, 51, 234, 0.15);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #c084fc;
+}
+
+.md-code-block {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: #16142a;
+  border: 1px solid rgba(147, 51, 234, 0.12);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  white-space: pre;
+  color: #c084fc;
+  margin: 4px 0;
+  display: block;
+  line-height: 1.6;
+}

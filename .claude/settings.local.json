@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(NODE_ENV=development timeout 8 npx electron .)",
+      "Bash(npx electron-rebuild *)",
+      "Bash(npx vite *)",
+      "Bash(npm run *)",
+      "Bash(node *)"
+    ]
+  }
+}
