@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import CommandCenter from './components/CommandCenter';
 import ChatPanel from './components/ChatPanel';
+import ApiKeySetup from './components/ApiKeySetup';
 import { useDailyFocus, useStreaks, useGoals, useSkillTracks, useCountdowns } from './hooks/useDB';
 import { useAI } from './hooks/useAI';
 
@@ -8,6 +9,7 @@ const isElectron = typeof window !== 'undefined' && !!window.pathkeeper;
 
 export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!isElectron) return;
@@ -27,17 +29,20 @@ export default function App() {
     streamingText,
     isLoading,
     hasApiKey,
+    selectedModel,
+    changeModel,
     loadHistory,
     sendMessage,
     setApiKey,
-  } = useAI({ focus, goals, streaks });
+    clearChat,
+  } = useAI({ focus, goals, streaks, countdowns });
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
   return (
-    <div className="flex h-screen w-screen bg-bg overflow-hidden">
+    <div className="relative flex h-screen w-screen bg-bg overflow-hidden">
       {/* Left: Command Center — 55% */}
       <div className="flex flex-col" style={{ width: '55%', minWidth: 0 }}>
         <CommandCenter
@@ -46,6 +51,7 @@ export default function App() {
           tracks={tracks}
           countdowns={countdowns}
           onCompleteTask={completeTask}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </div>
 
@@ -58,8 +64,38 @@ export default function App() {
           hasApiKey={hasApiKey}
           onSend={sendMessage}
           onSetApiKey={setApiKey}
+          onClearChat={clearChat}
+          selectedModel={selectedModel}
+          onChangeModel={changeModel}
         />
       </div>
+
+      {/* Persistent Settings Modal Overlay */}
+      {isSettingsOpen && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md fade-in no-drag"
+          onClick={() => setIsSettingsOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-md bg-[#0a0a0f] border border-purple-500/20 rounded-2xl shadow-2xl overflow-hidden fade-in-up"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setIsSettingsOpen(false)}
+              className="absolute top-4 right-4 text-text-muted hover:text-text-primary text-[18px] cursor-pointer select-none no-drag transition-colors"
+              title="Close Settings"
+            >
+              ✕
+            </button>
+            <ApiKeySetup
+              onSave={async (antKey, gemKey) => {
+                await setApiKey(antKey, gemKey);
+                setIsSettingsOpen(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

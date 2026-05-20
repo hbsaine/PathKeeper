@@ -11,6 +11,7 @@ interface Props {
   tracks: SkillTrack[];
   countdowns: Countdown[];
   onCompleteTask: (taskId: string) => void;
+  onOpenSettings: () => void;
 }
 
 function AlchemyCircle({ style }: { style?: CSSProperties }) {
@@ -104,7 +105,7 @@ function AlchemyCircle({ style }: { style?: CSSProperties }) {
   );
 }
 
-export default function CommandCenter({ focus, streaks, tracks, countdowns, onCompleteTask }: Props) {
+export default function CommandCenter({ focus, streaks, tracks, countdowns, onCompleteTask, onOpenSettings }: Props) {
   const streak = streaks.find(s => s.type === 'daily_tasks')?.current_streak ?? 0;
 
   return (
@@ -159,7 +160,7 @@ export default function CommandCenter({ focus, streaks, tracks, countdowns, onCo
           </span>
         </div>
 
-        <div className="no-drag flex items-center gap-4">
+        <div className="no-drag flex items-center gap-3.5">
           <span className="text-[12px] text-text-muted">{formatDayHeader()}</span>
           {streak > 0 && (
             <div className="flex items-center gap-1.5">
@@ -168,6 +169,14 @@ export default function CommandCenter({ focus, streaks, tracks, countdowns, onCo
               <span className="text-[10px] text-text-muted uppercase tracking-wide">streak</span>
             </div>
           )}
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center justify-center w-7 h-7 rounded-md border border-white/5 bg-white/5 text-text-muted hover:text-purple-400 hover:border-purple-500/20 hover:bg-purple-500/5 transition-all duration-200 cursor-pointer"
+            title="Configure API Keys"
+            style={{ fontSize: '13px' }}
+          >
+            ⚙
+          </button>
         </div>
       </div>
 

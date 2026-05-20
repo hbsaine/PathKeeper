@@ -83,6 +83,7 @@ export interface PathkeeperAPI {
     updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
     getDailyFocus: (date: string) => Promise<DailyFocusItem[]>;
     completeFocusTask: (taskId: string, date: string) => Promise<void>;
+    toggleFocusTask: (taskId: string, date: string) => Promise<number>;
     getContacts: () => Promise<Contact[]>;
     addContact: (contact: Partial<Contact>) => Promise<string>;
     updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
@@ -92,14 +93,16 @@ export interface PathkeeperAPI {
     getStreaks: () => Promise<Streak[]>;
     getChatHistory: () => Promise<ChatMessage[]>;
     addChatMessage: (role: string, content: string) => Promise<string>;
+    clearChatHistory: () => Promise<void>;
     getGoals: () => Promise<Goal[]>;
     getSetting: (key: string) => Promise<string | null>;
     setSetting: (key: string, value: string) => Promise<void>;
     getCountdowns: () => Promise<Countdown[]>;
     addCountdown: (title: string, eventDate: string) => Promise<string>;
+    deleteCountdown: (id: string) => Promise<void>;
   };
   ai: {
-    sendMessage: (systemPrompt: string, messages: { role: string; content: string }[]) => Promise<string>;
+    sendMessage: (systemPrompt: string, messages: { role: string; content: string }[], model?: 'claude' | 'gemini') => Promise<string>;
     startPreworkGrill: (taskId: string) => Promise<string>;
     submitGrillAnswer: (taskId: string, answer: string) => Promise<{ completed: boolean; nextQuestion?: string }>;
     cancelGrill: (taskId: string) => Promise<void>;
@@ -108,6 +111,8 @@ export interface PathkeeperAPI {
     removeStreamListeners: () => void;
     onDataChanged: (cb: () => void) => void;
     removeDataChangedListeners: () => void;
+    onCountdownsUpdated: (cb: () => void) => void;
+    removeCountdownsUpdatedListeners: () => void;
   };
 }
 

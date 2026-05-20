@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('pathkeeper', {
     updateTask: (id: string, updates: unknown) => ipcRenderer.invoke('db:updateTask', id, updates),
     getDailyFocus: (date: string) => ipcRenderer.invoke('db:getDailyFocus', date),
     completeFocusTask: (taskId: string, date: string) => ipcRenderer.invoke('db:completeFocusTask', taskId, date),
+    toggleFocusTask: (taskId: string, date: string) => ipcRenderer.invoke('db:toggleFocusTask', taskId, date),
 
     getContacts: () => ipcRenderer.invoke('db:getContacts'),
     addContact: (contact: unknown) => ipcRenderer.invoke('db:addContact', contact),
@@ -29,10 +30,12 @@ contextBridge.exposeInMainWorld('pathkeeper', {
     setSetting: (key: string, value: string) => ipcRenderer.invoke('db:setSetting', key, value),
     getCountdowns: () => ipcRenderer.invoke('db:getCountdowns'),
     addCountdown: (title: string, eventDate: string) => ipcRenderer.invoke('db:addCountdown', title, eventDate),
+    deleteCountdown: (id: string) => ipcRenderer.invoke('db:deleteCountdown', id),
+    clearChatHistory: () => ipcRenderer.invoke('db:clearChatHistory'),
   },
   ai: {
-    sendMessage: (systemPrompt: string, messages: unknown) =>
-      ipcRenderer.invoke('ai:sendMessage', systemPrompt, messages),
+    sendMessage: (systemPrompt: string, messages: unknown, model?: 'claude' | 'gemini') =>
+      ipcRenderer.invoke('ai:sendMessage', systemPrompt, messages, model),
     startPreworkGrill: (taskId: string) =>
       ipcRenderer.invoke('ai:startPreworkGrill', taskId),
     submitGrillAnswer: (taskId: string, answer: string) =>
@@ -54,6 +57,12 @@ contextBridge.exposeInMainWorld('pathkeeper', {
     },
     removeDataChangedListeners: () => {
       ipcRenderer.removeAllListeners('db:changed');
+    },
+    onCountdownsUpdated: (cb: () => void) => {
+      ipcRenderer.on('countdowns-updated', cb);
+    },
+    removeCountdownsUpdatedListeners: () => {
+      ipcRenderer.removeAllListeners('countdowns-updated');
     },
   },
 });

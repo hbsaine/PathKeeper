@@ -337,6 +337,10 @@ export function addChatMessage(role: string, content: string) {
   return id;
 }
 
+export function clearChatHistory() {
+  db.prepare('DELETE FROM chat_messages').run();
+}
+
 export function getSetting(key: string): string | null {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
   return row?.value ?? null;
@@ -373,4 +377,30 @@ export function addCountdown(title: string, event_date: string) {
   const id = uuidv4();
   db.prepare('INSERT INTO countdowns (id, title, event_date) VALUES (?, ?, ?)').run(id, title, event_date);
   return id;
+}
+
+export function deleteCountdown(id: string) {
+  db.prepare('DELETE FROM countdowns WHERE id = ?').run(id);
+}
+
+export function updateCountdown(id: string, updates: { title?: string; event_date?: string }) {
+  const entries = Object.entries(updates).filter(([, v]) => v !== undefined);
+  if (!entries.length) return;
+  const fields = entries.map(([k]) => `${k} = ?`).join(', ');
+  const values = entries.map(([, v]) => v);
+  db.prepare(`UPDATE countdowns SET ${fields} WHERE id = ?`).run(...values, id);
+}
+
+export function toggleFocusTask(taskId: string, date: string) {
+  const row = db.prepare('SELECT completed FROM daily_focus WHERE task_id = ? AND date = ?').get(taskId, date) as { completed: number } | undefined;
+  const isCurrentlyDone = row?.completed === 1;
+  const newCompleted = isCurrentlyDone ? 0 : 1;
+  db.prepare('UPDATE daily_focus SET completed = ? WHERE task_id = ? AND date = ?').run(newCompleted, taskId, date);
+  if (newCompleted === 1) {
+    db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', taskId);
+    updateStreak('daily_tasks');
+  } else {
+    db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run('pending', taskId);
+  }
+  return newCompleted;
 }

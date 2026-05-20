@@ -19,7 +19,7 @@ export function useDailyFocus(refreshKey = 0) {
 
   const completeTask = useCallback(async (taskId: string) => {
     if (!isElectron) return;
-    await window.pathkeeper.db.completeFocusTask(taskId, todayISO());
+    await window.pathkeeper.db.toggleFocusTask(taskId, todayISO());
     await load();
   }, [load]);
 

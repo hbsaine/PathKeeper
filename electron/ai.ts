@@ -7,7 +7,7 @@ import type {
   ToolsBetaContentBlock,
 } from '@anthropic-ai/sdk/resources/beta/tools/messages';
 import { BrowserWindow } from 'electron';
-import { getSetting, addTask, updateTask, completeTaskById, addToFocus, addContact, addCountdown } from './db';
+import { getSetting, addTask, updateTask, completeTaskById, addToFocus, addContact, addCountdown, deleteCountdown, updateCountdown } from './db';
 
 let client: Anthropic | null = null;
 
@@ -97,19 +97,45 @@ const TOOLS: Tool[] = [
       required: ['title', 'event_date'],
     },
   },
+  {
+    name: 'update_countdown',
+    description: 'Update a countdown event (title or date).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        countdown_id: { type: 'string', description: 'The ID of the countdown to update' },
+        title: { type: 'string', description: 'New title (optional)' },
+        event_date: { type: 'string', description: 'New ISO date (optional)' },
+      },
+      required: ['countdown_id'],
+    },
+  },
+  {
+    name: 'delete_countdown',
+    description: 'Delete a countdown event from the countdown panel. Use when the user requests to remove or delete a countdown.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        countdown_id: { type: 'string', description: 'The ID of the countdown to delete' },
+      },
+      required: ['countdown_id'],
+    },
+  },
 ];
 
 async function executeToolCall(
   name: string,
-  input: Record<string, unknown>,
-  win: BrowserWindow
+  input: Record<string, unknown>
 ): Promise<unknown> {
   const today = new Date().toISOString().slice(0, 10);
+  const win = BrowserWindow.getAllWindows()[0];
+  const notify = () => { if (win) win.webContents.send('db:changed'); };
+  const notifyCountdowns = () => { if (win) win.webContents.send('countdowns-updated'); };
 
   switch (name) {
     case 'complete_task': {
       completeTaskById(input.task_id as string);
-      win.webContents.send('db:changed');
+      notify();
       return { success: true };
     }
     case 'add_task': {
@@ -119,7 +145,7 @@ async function executeToolCall(
         due_date: input.due_date as string | undefined,
       });
       const addedToFocus = input.add_to_focus ? addToFocus(taskId, today) : false;
-      win.webContents.send('db:changed');
+      notify();
       return { success: true, task_id: taskId, added_to_focus: addedToFocus };
     }
     case 'update_task': {
@@ -127,7 +153,7 @@ async function executeToolCall(
       if (input.title) updates.title = input.title;
       if (input.domain) updates.domain = input.domain;
       updateTask(input.task_id as string, updates);
-      win.webContents.send('db:changed');
+      notify();
       return { success: true };
     }
     case 'add_contact': {
@@ -138,13 +164,29 @@ async function executeToolCall(
         relationship: input.relationship,
         importance: input.importance ?? 3,
       });
-      win.webContents.send('db:changed');
+      notify();
       return { success: true, contact_id: id };
     }
     case 'add_countdown': {
       const id = addCountdown(input.title as string, input.event_date as string);
-      win.webContents.send('db:changed');
+      notify();
+      notifyCountdowns();
       return { success: true, countdown_id: id };
+    }
+    case 'update_countdown': {
+      updateCountdown(input.countdown_id as string, {
+        title: input.title as string | undefined,
+        event_date: input.event_date as string | undefined,
+      });
+      notify();
+      notifyCountdowns();
+      return { success: true };
+    }
+    case 'delete_countdown': {
+      deleteCountdown(input.countdown_id as string);
+      notify();
+      notifyCountdowns();
+      return { success: true };
     }
     default:
       return { error: `Unknown tool: ${name}` };
@@ -154,8 +196,45 @@ async function executeToolCall(
 export async function sendMessage(
   win: BrowserWindow,
   systemPrompt: string,
-  messages: { role: 'user' | 'assistant'; content: string }[]
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  model: 'claude' | 'gemini' = 'claude'
 ): Promise<string> {
+  if (model === 'gemini') {
+    const { getGeminiClient } = require('./gemini');
+    const geminiClient = getGeminiClient();
+
+    const contents = messages.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
+
+    try {
+      const responseStream = await geminiClient.models.generateContentStream({
+        model: 'gemini-3.5-flash',
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.3,
+        }
+      });
+
+      let fullText = '';
+      for await (const chunk of responseStream) {
+        const text = chunk.text || '';
+        if (text) {
+          fullText += text;
+          win.webContents.send('ai:stream-chunk', text);
+        }
+      }
+      win.webContents.send('ai:stream-done');
+      return fullText;
+    } catch (err) {
+      console.error('[Gemini error in sendMessage]:', err);
+      win.webContents.send('ai:stream-done');
+      throw err;
+    }
+  }
+
   const anthropic = getClient();
 
   const sdkMessages: ToolsBetaMessageParam[] = messages.map(m => ({
@@ -184,7 +263,7 @@ export async function sendMessage(
     for (const block of response.content as ToolsBetaContentBlock[]) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseBlock;
-        const result = await executeToolCall(toolBlock.name, toolBlock.input as Record<string, unknown>, win);
+        const result = await executeToolCall(toolBlock.name, toolBlock.input as Record<string, unknown>);
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolBlock.id,

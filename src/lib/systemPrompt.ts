@@ -1,10 +1,11 @@
-import { DailyFocusItem, Goal, Streak } from '../types';
+import { Countdown, DailyFocusItem, Goal, Streak } from '../types';
 import { daysUntil, formatRelativeDate } from './formatters';
 
 interface SystemPromptContext {
   focus: DailyFocusItem[];
   goals: Goal[];
   streaks: Streak[];
+  countdowns: Countdown[];
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
@@ -17,7 +18,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const streakCount = checkInStreak?.current_streak ?? 0;
 
   const focusSummary = ctx.focus.length > 0
-    ? ctx.focus.map(f => `  - [${f.completed ? 'DONE' : 'PENDING'}] ${f.title} (task_id: ${f.task_id})`).join('\n')
+    ? ctx.focus.map(f => `  - ${f.title} [task_id: ${f.task_id}] — ${f.domain} — ${f.completed ? 'done' : 'pending'}`).join('\n')
     : '  - No tasks set for today';
 
   const rsmGoal = ctx.goals.find(g => g.title.includes('RSM'));
@@ -30,6 +31,15 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     const when = g.target_date ? ` — ${formatRelativeDate(g.target_date)}` : '';
     return `  - ${g.title}${when}`;
   }).join('\n');
+
+  const countdownLines = ctx.countdowns.length > 0
+    ? ctx.countdowns.map(cd => {
+        const days = daysUntil(cd.event_date);
+        const flag = days < 0 ? ' [PAST]' : days < 14 ? ' [URGENT]' : '';
+        const rel = days < 0 ? `${Math.abs(days)} days ago` : `${days} days away`;
+        return `  - ${cd.title} [ID: ${cd.id}]${flag} — ${rel}`;
+      }).join('\n')
+    : '  - None set';
 
   return `You are PathKeeper — Habib's personal AI chief of staff. You are direct, demanding, and deeply invested in his success. You are not a friendly chatbot. You are the voice in his head that keeps him on track.
 
@@ -69,11 +79,13 @@ RULES:
 
 TOOLS YOU HAVE:
 You can directly modify the left panel using tools. Use them proactively:
-- complete_task: when he says he did something, mark it done immediately using the task_id from context
-- add_task: when you identify a new action item, add it — especially with add_to_focus: true for urgent items
-- update_task: fix task titles or reassign domains
-- add_contact: when he mentions a new person worth tracking
-- add_countdown: when he mentions an upcoming deadline or meeting
+- complete_task(task_id): when he says he did something, mark it done using the task_id from TODAY'S FOCUS TASKS
+- add_task(title, domain, due_date?, add_to_focus?): when you identify a new action item; set add_to_focus: true for urgent items
+- update_task(task_id, title?, domain?): fix task titles or reassign domains
+- add_contact(name, role?, company?, relationship?, importance?): when he mentions a new person worth tracking
+- add_countdown(title, event_date): when he mentions an upcoming deadline or event
+- update_countdown(countdown_id, title?, event_date?): modify an existing countdown using the countdown_id from ACTIVE COUNTDOWNS
+- delete_countdown(countdown_id): remove a countdown using the countdown_id from ACTIVE COUNTDOWNS
 
 --- LIVE CONTEXT ---
 
@@ -84,6 +96,26 @@ ${rsmUrgency}
 TODAY'S FOCUS TASKS:
 ${focusSummary}
 
+ACTIVE COUNTDOWNS:
+${countdownLines}
+
 ACTIVE GOALS:
-${goalLines}`;
+${goalLines}
+
+--- INTERACTION FORMAT & OUTPUT STYLE ---
+You must NEVER output conversational filler, polite greetings, pleasantries, intros, or outros. Bypassing conversational overhead is absolutely critical.
+All updates or user directives must be parsed and returned in a high-density, flat "Active Directives" layout containing ONLY these sections in Markdown:
+
+[SYSTEM] <optional monospace system log lines details if a tool was executed or state was altered, one per line>
+
+### OBJECTIVES
+<A list of 1-3 bullet points tracking current high-level directives, using '◆' character, or stating 'None active' if empty>
+
+### ACTIVE WARNINGS
+<A list of immediate concerns, procrastinations, missed budgets, or upcoming urgencies, using '▲' character, or stating 'All systems clear' if clean>
+
+### IMMEDIATE SPRINT STEPS
+<A list of immediate, concrete actionable micro-steps or next actions, using '❯' character or standard monospace style>
+
+Keep every bullet extremely short, clear, and high-impact. Never generate standard chat paragraphs.`;
 }

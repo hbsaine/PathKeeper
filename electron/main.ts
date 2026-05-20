@@ -41,6 +41,7 @@ function registerIPC(win: BrowserWindow) {
   ipcMain.handle('db:updateTask', (_e, id, updates) => db.updateTask(id, updates));
   ipcMain.handle('db:getDailyFocus', (_e, date) => db.getDailyFocus(date));
   ipcMain.handle('db:completeFocusTask', (_e, taskId, date) => db.completeFocusTask(taskId, date));
+  ipcMain.handle('db:toggleFocusTask', (_e, taskId, date) => db.toggleFocusTask(taskId, date));
 
   ipcMain.handle('db:getContacts', () => db.getContacts());
   ipcMain.handle('db:addContact', (_e, contact) => db.addContact(contact));
@@ -57,9 +58,11 @@ function registerIPC(win: BrowserWindow) {
   ipcMain.handle('db:getStreaks', () => db.getStreaks());
   ipcMain.handle('db:getChatHistory', () => db.getChatHistory());
   ipcMain.handle('db:addChatMessage', (_e, role, content) => db.addChatMessage(role, content));
+  ipcMain.handle('db:clearChatHistory', () => db.clearChatHistory());
   ipcMain.handle('db:getGoals', () => db.getGoals());
   ipcMain.handle('db:getCountdowns', () => db.getCountdowns());
   ipcMain.handle('db:addCountdown', (_e, title, event_date) => db.addCountdown(title, event_date));
+  ipcMain.handle('db:deleteCountdown', (_e, id) => db.deleteCountdown(id));
 
   ipcMain.handle('db:getSetting', (_e, key) => db.getSetting(key));
   ipcMain.handle('db:setSetting', (_e, key, value) => {
@@ -69,14 +72,14 @@ function registerIPC(win: BrowserWindow) {
   });
 
   // AI handler
-  ipcMain.handle('ai:sendMessage', async (_e, systemPrompt, messages) => {
+  ipcMain.handle('ai:sendMessage', async (_e, systemPrompt, messages, model) => {
     try {
-      return await ai.sendMessage(win, systemPrompt, messages);
+      return await ai.sendMessage(win, systemPrompt, messages, model);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message === 'NO_API_KEY') {
+      if (message === 'NO_API_KEY' || message === 'NO_GEMINI_API_KEY') {
         win.webContents.send('ai:stream-done');
-        return '__NO_API_KEY__';
+        return message === 'NO_API_KEY' ? '__NO_API_KEY__' : '__NO_GEMINI_API_KEY__';
       }
       throw err;
     }

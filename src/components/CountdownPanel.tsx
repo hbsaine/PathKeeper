@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Countdown } from '../types';
 import { daysUntil } from '../lib/formatters';
+
+const isElectron = typeof window !== 'undefined' && !!window.pathkeeper;
 
 function ArcProgress({ days }: { days: number }) {
   const radius = 17;
@@ -40,7 +43,25 @@ interface Props {
   countdowns: Countdown[];
 }
 
-export default function CountdownPanel({ countdowns }: Props) {
+export default function CountdownPanel({ countdowns: propCountdowns }: Props) {
+  const [countdowns, setCountdowns] = useState<Countdown[]>(propCountdowns);
+
+  // Sync when App.tsx refreshKey mechanism delivers new data via prop
+  useEffect(() => {
+    setCountdowns(propCountdowns);
+  }, [propCountdowns]);
+
+  // Independent listener: AI tool calls for countdowns emit this event directly
+  useEffect(() => {
+    if (!isElectron) return;
+    const refresh = async () => {
+      const data = await window.pathkeeper.db.getCountdowns();
+      setCountdowns(data);
+    };
+    window.pathkeeper.ai.onCountdownsUpdated(refresh);
+    return () => window.pathkeeper.ai.removeCountdownsUpdatedListeners();
+  }, []);
+
   return (
     <div className="panel p-4">
       <div className="flex items-center gap-1.5 mb-3">
@@ -59,12 +80,12 @@ export default function CountdownPanel({ countdowns }: Props) {
             return (
               <div
                 key={cd.id}
-                className={i > 0 ? 'border-t pt-3' : ''}
+                className={`group relative ${i > 0 ? 'border-t pt-3' : ''}`}
                 style={i > 0 ? { borderColor: 'rgba(147,51,234,0.07)' } : undefined}
               >
                 <div className="flex items-center gap-3">
                   <ArcProgress days={days} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <span
                       className="font-mono font-bold tabular-nums block leading-none"
                       style={{
@@ -83,6 +104,17 @@ export default function CountdownPanel({ countdowns }: Props) {
                         : 'days away'}
                     </p>
                   </div>
+                  <button
+                    onClick={async () => {
+                      if (!isElectron) return;
+                      await window.pathkeeper.db.deleteCountdown(cd.id);
+                      setCountdowns(prev => prev.filter(c => c.id !== cd.id));
+                    }}
+                    className="opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity duration-150 text-[11px] text-text-muted hover:text-red-400 px-1 py-0.5 rounded cursor-pointer select-none"
+                    title="Remove countdown"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             );

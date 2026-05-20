@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DailyFocusItem } from '../types';
 
 const domainBorderColor: Record<string, string> = {
@@ -27,6 +27,7 @@ interface Props {
 }
 
 export default function TodaysFocus({ focus, onComplete }: Props) {
+  const [localCompleted, setLocalCompleted] = useState<Map<string, boolean>>(new Map());
   const [pulsing, setPulsing] = useState<Set<string>>(new Set());
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
@@ -38,11 +39,22 @@ export default function TodaysFocus({ focus, onComplete }: Props) {
   const [isLoadingGrill, setIsLoadingGrill] = useState(false);
   const [copyFeedbackTaskId, setCopyFeedbackTaskId] = useState<string | null>(null);
 
+  // Clear optimistic overrides when fresh DB data arrives
+  useEffect(() => {
+    setLocalCompleted(new Map());
+  }, [focus]);
+
   const doneCount  = focus.filter(f => f.completed === 1 || f.status === 'done').length;
   const totalCount = focus.length;
   const allDone    = totalCount > 0 && doneCount === totalCount;
 
-  const handleComplete = (taskId: string) => {
+  const handleComplete = (taskId: string, currentDone: boolean) => {
+    // Optimistic toggle — instant visual feedback before DB round-trip
+    setLocalCompleted(prev => {
+      const next = new Map(prev);
+      next.set(taskId, !currentDone);
+      return next;
+    });
     setPulsing(prev => new Set([...prev, taskId]));
     onComplete(taskId);
     setTimeout(() => {
@@ -136,7 +148,7 @@ export default function TodaysFocus({ focus, onComplete }: Props) {
   };
 
   const handleCompleteTaskInsideAccordion = (taskId: string) => {
-    handleComplete(taskId);
+    handleComplete(taskId, false);
     setExpandedTaskId(null);
   };
 
@@ -163,7 +175,8 @@ export default function TodaysFocus({ focus, onComplete }: Props) {
         )}
 
         {focus.map((item) => {
-          const done       = item.completed === 1 || item.status === 'done';
+          const localOverride = localCompleted.get(item.task_id);
+          const done       = localOverride !== undefined ? localOverride : (item.completed === 1 || item.status === 'done');
           const isPulsing  = pulsing.has(item.task_id);
           const border     = domainBorderColor[item.domain] ?? '#3d3650';
           const expanded   = expandedTaskId === item.task_id;
@@ -198,10 +211,9 @@ export default function TodaysFocus({ focus, onComplete }: Props) {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!done) handleComplete(item.task_id);
+                    handleComplete(item.task_id, done);
                   }}
-                  disabled={done}
-                  className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-all duration-300 ${
+                  className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center transition-all duration-300 cursor-pointer ${
                     isPulsing ? 'check-pulse' : ''
                   } ${
                     done
@@ -289,9 +301,14 @@ export default function TodaysFocus({ focus, onComplete }: Props) {
                     <div className="space-y-3 bg-[#0f0e18]/85 p-3 rounded-lg border border-purple-500/10">
                       {/* Step Indicator */}
                       <div className="flex items-center justify-between text-[10px] font-mono">
-                        <span className="text-purple-400 font-bold tracking-wider uppercase">
-                          AI Mini-Grill — Step {grillStep} of 2
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-purple-400 font-bold tracking-wider uppercase">
+                            AI Mini-Grill — Step {grillStep} of 2
+                          </span>
+                          <span className="text-[8px] font-medium font-sans tracking-wide text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-full select-none">
+                            Gemini 3.5 Flash
+                          </span>
+                        </div>
                         <div className="flex gap-1.5">
                           <div className={`w-1.5 h-1.5 rounded-full ${grillStep && grillStep >= 1 ? 'bg-purple-500' : 'bg-white/10'}`} />
                           <div className={`w-1.5 h-1.5 rounded-full ${grillStep && grillStep >= 2 ? 'bg-purple-500' : 'bg-white/10'}`} />

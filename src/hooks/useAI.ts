@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { ChatMessage, DailyFocusItem, Goal, Streak } from '../types';
+import { ChatMessage, Countdown, DailyFocusItem, Goal, Streak } from '../types';
 import { buildSystemPrompt } from '../lib/systemPrompt';
 
 const isElectron = typeof window !== 'undefined' && !!window.pathkeeper;
@@ -8,10 +8,12 @@ interface UseAIOptions {
   focus: DailyFocusItem[];
   goals: Goal[];
   streaks: Streak[];
+  countdowns: Countdown[];
 }
 
-export function useAI({ focus, goals, streaks }: UseAIOptions) {
+export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [selectedModel, setSelectedModel] = useState<'claude' | 'gemini'>('claude');
   const [streamingText, setStreamingText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
@@ -25,9 +27,22 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
     setMessages(ordered);
     messagesRef.current = ordered;
 
+    const savedModel = await window.pathkeeper.db.getSetting('active_chat_model');
+    const active = (savedModel === 'claude' || savedModel === 'gemini') ? savedModel : 'claude';
+    setSelectedModel(active);
+
     const anthropicKey = await window.pathkeeper.db.getSetting('anthropic_api_key');
     const geminiKey = await window.pathkeeper.db.getSetting('gemini_api_key');
-    setHasApiKey(!!anthropicKey || !!geminiKey);
+    setHasApiKey(active === 'claude' ? !!anthropicKey : !!geminiKey);
+  }, []);
+
+  const changeModel = useCallback(async (model: 'claude' | 'gemini') => {
+    if (!isElectron) return;
+    setSelectedModel(model);
+    await window.pathkeeper.db.setSetting('active_chat_model', model);
+
+    const key = await window.pathkeeper.db.getSetting(model === 'claude' ? 'anthropic_api_key' : 'gemini_api_key');
+    setHasApiKey(!!key);
   }, []);
 
   const sendMessage = useCallback(async (userText: string) => {
@@ -48,7 +63,7 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
 
     await window.pathkeeper.db.addChatMessage('user', userText);
 
-    const systemPrompt = buildSystemPrompt({ focus, goals, streaks });
+    const systemPrompt = buildSystemPrompt({ focus, goals, streaks, countdowns });
 
     // Last 20 messages for context
     const contextMessages = newMessages.slice(-20).map(m => ({
@@ -69,8 +84,10 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
       setStreamingText('');
       setIsLoading(false);
 
-      if (accumulated === '__NO_API_KEY__' || accumulated === '') {
-        if (accumulated === '__NO_API_KEY__') setHasApiKey(false);
+      if (accumulated === '__NO_API_KEY__' || accumulated === '__NO_GEMINI_API_KEY__' || accumulated === '') {
+        if (accumulated === '__NO_API_KEY__' || accumulated === '__NO_GEMINI_API_KEY__') {
+          setHasApiKey(false);
+        }
         return;
       }
 
@@ -89,8 +106,8 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
     });
 
     try {
-      const result = await window.pathkeeper.ai.sendMessage(systemPrompt, contextMessages);
-      if (result === '__NO_API_KEY__') {
+      const result = await window.pathkeeper.ai.sendMessage(systemPrompt, contextMessages, selectedModel);
+      if (result === '__NO_API_KEY__' || result === '__NO_GEMINI_API_KEY__') {
         setHasApiKey(false);
         setIsLoading(false);
         setStreamingText('');
@@ -100,22 +117,33 @@ export function useAI({ focus, goals, streaks }: UseAIOptions) {
       setIsLoading(false);
       setStreamingText('');
     }
-  }, [focus, goals, streaks, isLoading]);
+  }, [focus, goals, streaks, countdowns, isLoading, selectedModel]);
 
   const setApiKey = useCallback(async (anthropicKey: string, geminiKey: string) => {
     if (!isElectron) return;
     await window.pathkeeper.db.setSetting('anthropic_api_key', anthropicKey);
     await window.pathkeeper.db.setSetting('gemini_api_key', geminiKey);
-    setHasApiKey(true);
+    const key = await window.pathkeeper.db.getSetting(selectedModel === 'claude' ? 'anthropic_api_key' : 'gemini_api_key');
+    setHasApiKey(!!key);
+  }, [selectedModel]);
+
+  const clearChat = useCallback(async () => {
+    if (!isElectron) return;
+    await window.pathkeeper.db.clearChatHistory();
+    setMessages([]);
+    messagesRef.current = [];
   }, []);
 
   return {
     messages,
+    selectedModel,
+    changeModel,
     streamingText,
     isLoading,
     hasApiKey,
     loadHistory,
     sendMessage,
     setApiKey,
+    clearChat,
   };
 }
