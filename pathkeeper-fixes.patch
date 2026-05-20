@@ -1,0 +1,364 @@
+diff --git a/electron/ai.ts b/electron/ai.ts
+index 3409962..b2f0256 100644
+--- a/electron/ai.ts
++++ b/electron/ai.ts
+@@ -1,11 +1,4 @@
+ import Anthropic from '@anthropic-ai/sdk';
+-import type {
+-  Tool,
+-  ToolsBetaMessageParam,
+-  ToolResultBlockParam,
+-  ToolUseBlock,
+-  ToolsBetaContentBlock,
+-} from '@anthropic-ai/sdk/resources/beta/tools/messages';
+ import { BrowserWindow } from 'electron';
+ import { getSetting, addTask, updateTask, completeTaskById, addToFocus, addContact, addCountdown, deleteCountdown, updateCountdown } from './db';
+ 
+@@ -24,12 +17,13 @@ export function setApiKey(key: string) {
+   client = new Anthropic({ apiKey: key });
+ }
+ 
+-const TOOLS: Tool[] = [
++// Standard messages API tool definitions (no beta namespace)
++const TOOLS: Anthropic.Messages.Tool[] = [
+   {
+     name: 'complete_task',
+     description: 'Mark a task as done. Use when the user says they completed or finished a task.',
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         task_id: { type: 'string', description: 'The ID of the task to mark complete' },
+       },
+@@ -40,7 +34,7 @@ const TOOLS: Tool[] = [
+     name: 'add_task',
+     description: "Create a new task and optionally add it to today's daily focus (max 3 focus slots).",
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         title: { type: 'string', description: 'Task title' },
+         domain: {
+@@ -58,7 +52,7 @@ const TOOLS: Tool[] = [
+     name: 'update_task',
+     description: "Update a task's title or domain.",
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         task_id: { type: 'string' },
+         title: { type: 'string' },
+@@ -71,7 +65,7 @@ const TOOLS: Tool[] = [
+     name: 'add_contact',
+     description: 'Add a new person to the network panel.',
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         name: { type: 'string' },
+         role: { type: 'string' },
+@@ -89,7 +83,7 @@ const TOOLS: Tool[] = [
+     name: 'add_countdown',
+     description: 'Add a countdown event (deadline, meeting, or milestone) to the countdown panel.',
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         title: { type: 'string', description: 'Event name' },
+         event_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+@@ -101,7 +95,7 @@ const TOOLS: Tool[] = [
+     name: 'update_countdown',
+     description: 'Update a countdown event (title or date).',
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         countdown_id: { type: 'string', description: 'The ID of the countdown to update' },
+         title: { type: 'string', description: 'New title (optional)' },
+@@ -114,7 +108,7 @@ const TOOLS: Tool[] = [
+     name: 'delete_countdown',
+     description: 'Delete a countdown event from the countdown panel. Use when the user requests to remove or delete a countdown.',
+     input_schema: {
+-      type: 'object',
++      type: 'object' as const,
+       properties: {
+         countdown_id: { type: 'string', description: 'The ID of the countdown to delete' },
+       },
+@@ -199,6 +193,7 @@ export async function sendMessage(
+   messages: { role: 'user' | 'assistant'; content: string }[],
+   model: 'claude' | 'gemini' = 'claude'
+ ): Promise<string> {
++  // ── Gemini path (streaming, no tools) ────────────────────────────
+   if (model === 'gemini') {
+     const { getGeminiClient } = require('./gemini');
+     const geminiClient = getGeminiClient();
+@@ -235,17 +230,21 @@ export async function sendMessage(
+     }
+   }
+ 
++  // ── Claude path (streaming + tool use agentic loop) ──────────────
+   const anthropic = getClient();
+ 
+-  const sdkMessages: ToolsBetaMessageParam[] = messages.map(m => ({
++  // Build the messages array for the API — supports both string and ContentBlock[]
++  const sdkMessages: Anthropic.Messages.MessageParam[] = messages.map(m => ({
+     role: m.role,
+     content: m.content,
+   }));
+ 
+   let fullText = '';
++  const toolSystemLogs: string[] = [];
+ 
++  // Agentic loop: keep going until the model stops using tools
+   while (true) {
+-    const response = await anthropic.beta.tools.messages.create({
++    const response = await anthropic.messages.create({
+       model: 'claude-sonnet-4-6',
+       max_tokens: 2048,
+       system: systemPrompt,
+@@ -253,33 +252,81 @@ export async function sendMessage(
+       tools: TOOLS,
+     });
+ 
+-    for (const block of response.content as ToolsBetaContentBlock[]) {
+-      if (block.type === 'text') fullText += block.text;
++    // Collect text blocks and stream them incrementally
++    for (const block of response.content) {
++      if (block.type === 'text') {
++        fullText += block.text;
++        win.webContents.send('ai:stream-chunk', block.text);
++      }
+     }
+ 
++    // If the model didn't request tool use, we're done
+     if (response.stop_reason !== 'tool_use') break;
+ 
+-    const toolResults: ToolResultBlockParam[] = [];
+-    for (const block of response.content as ToolsBetaContentBlock[]) {
++    // Process tool calls
++    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
++    for (const block of response.content) {
+       if (block.type === 'tool_use') {
+-        const toolBlock = block as ToolUseBlock;
+-        const result = await executeToolCall(toolBlock.name, toolBlock.input as Record<string, unknown>);
++        const result = await executeToolCall(block.name, block.input as Record<string, unknown>);
+         toolResults.push({
+           type: 'tool_result',
+-          tool_use_id: toolBlock.id,
+-          content: [{ type: 'text', text: JSON.stringify(result) }],
++          tool_use_id: block.id,
++          content: JSON.stringify(result),
+         });
++        // Build system log line for the chat
++        const logLine = buildToolLog(block.name, block.input as Record<string, unknown>, result);
++        if (logLine) {
++          toolSystemLogs.push(logLine);
++          // Stream the system log immediately so user sees it
++          win.webContents.send('ai:stream-chunk', `\n[SYSTEM] ${logLine}\n`);
++          fullText += `\n[SYSTEM] ${logLine}\n`;
++        }
+       }
+     }
+ 
++    // Append the assistant's response (with tool_use blocks) and tool results
+     sdkMessages.push({
+       role: 'assistant',
+-      content: response.content as ToolsBetaMessageParam['content'],
++      content: response.content,
++    });
++    sdkMessages.push({
++      role: 'user',
++      content: toolResults,
+     });
+-    sdkMessages.push({ role: 'user', content: toolResults });
+   }
+ 
+-  if (fullText) win.webContents.send('ai:stream-chunk', fullText);
++  // Notify UI to refresh AFTER the entire agentic loop completes
++  // This ensures all tool mutations are done before the UI re-fetches
++  if (toolSystemLogs.length > 0) {
++    win.webContents.send('db:changed');
++    win.webContents.send('countdowns-updated');
++  }
++
+   win.webContents.send('ai:stream-done');
+   return fullText;
+ }
++
++// Build a human-readable log line for tool executions
++function buildToolLog(name: string, input: Record<string, unknown>, result: unknown): string | null {
++  const r = result as Record<string, unknown>;
++  if (!r.success) return `Tool ${name} failed: ${JSON.stringify(r)}`;
++
++  switch (name) {
++    case 'complete_task':
++      return `Task ${input.task_id} marked complete.`;
++    case 'add_task':
++      return `Task added: "${input.title}" (${input.domain})${r.added_to_focus ? ' — added to focus' : ''}.`;
++    case 'update_task':
++      return `Task ${input.task_id} updated.`;
++    case 'add_contact':
++      return `Contact added: "${input.name}".`;
++    case 'add_countdown':
++      return `Countdown added: "${input.title}" on ${input.event_date}.`;
++    case 'update_countdown':
++      return `Countdown ${input.countdown_id} updated.`;
++    case 'delete_countdown':
++      return `Countdown ${input.countdown_id} deleted.`;
++    default:
++      return null;
++  }
++}
+diff --git a/electron/main.ts b/electron/main.ts
+index 4e12ae6..11463f2 100644
+--- a/electron/main.ts
++++ b/electron/main.ts
+@@ -6,6 +6,9 @@ import * as gemini from './gemini';
+ 
+ const isDev = process.env.NODE_ENV === 'development';
+ 
++// Track the current window for AI streaming (updated when window is created)
++let mainWin: BrowserWindow | null = null;
++
+ function createWindow() {
+   const win = new BrowserWindow({
+     width: 1200,
+@@ -21,6 +24,8 @@ function createWindow() {
+     },
+   });
+ 
++  mainWin = win;
++
+   if (isDev) {
+     win.loadURL('http://localhost:5173');
+     win.webContents.openDevTools({ mode: 'detach' });
+@@ -28,13 +33,23 @@ function createWindow() {
+     win.loadFile(path.join(__dirname, '../dist/index.html'));
+   }
+ 
+-  // Register IPC handlers with win reference for streaming
+-  registerIPC(win);
++  win.on('closed', () => {
++    mainWin = null;
++  });
+ 
+   return win;
+ }
+ 
+-function registerIPC(win: BrowserWindow) {
++// Helper to get the current window (for AI handlers that need to stream)
++function getWin(): BrowserWindow {
++  if (mainWin && !mainWin.isDestroyed()) return mainWin;
++  const wins = BrowserWindow.getAllWindows();
++  if (wins.length > 0) return wins[0];
++  throw new Error('No window available');
++}
++
++// Register IPC handlers ONCE at app startup (not per-window)
++function registerIPC() {
+   // DB handlers
+   ipcMain.handle('db:getTasks', () => db.getTasks());
+   ipcMain.handle('db:addTask', (_e, task) => db.addTask(task));
+@@ -71,8 +86,9 @@ function registerIPC(win: BrowserWindow) {
+     if (key === 'gemini_api_key') gemini.setGeminiApiKey(value);
+   });
+ 
+-  // AI handler
++  // AI handler — uses getWin() to dynamically resolve the current window
+   ipcMain.handle('ai:sendMessage', async (_e, systemPrompt, messages, model) => {
++    const win = getWin();
+     try {
+       return await ai.sendMessage(win, systemPrompt, messages, model);
+     } catch (err: unknown) {
+@@ -98,6 +114,7 @@ function registerIPC(win: BrowserWindow) {
+   });
+ 
+   ipcMain.handle('ai:submitGrillAnswer', async (_e, taskId, answer) => {
++    const win = getWin();
+     try {
+       return await gemini.submitGrillAnswer(taskId, answer, win);
+     } catch (err: unknown) {
+@@ -124,6 +141,10 @@ app.whenReady().then(() => {
+     openAsHidden: false,
+   });
+ 
++  // Register IPC handlers ONCE
++  registerIPC();
++
++  // Create the first window
+   createWindow();
+ 
+   app.on('activate', () => {
+diff --git a/package.json b/package.json
+index 2c335c5..e32baf4 100644
+--- a/package.json
++++ b/package.json
+@@ -34,7 +34,7 @@
+     "wait-on": "^7.2.0"
+   },
+   "dependencies": {
+-    "@anthropic-ai/sdk": "^0.20.6",
++    "@anthropic-ai/sdk": "^0.97.0",
+     "@google/genai": "^2.4.0",
+     "better-sqlite3": "^11.10.0",
+     "react": "^18.2.0",
+diff --git a/src/App.tsx b/src/App.tsx
+index ca4a265..3f7a4fd 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -20,7 +20,7 @@ export default function App() {
+ 
+   const { focus, completeTask } = useDailyFocus(refreshKey);
+   const streaks = useStreaks(refreshKey);
+-  const goals = useGoals();
++  const goals = useGoals(refreshKey);
+   const tracks = useSkillTracks(refreshKey);
+   const countdowns = useCountdowns(refreshKey);
+ 
+diff --git a/src/components/ChatPanel.tsx b/src/components/ChatPanel.tsx
+index d5637a9..afeb0a5 100644
+--- a/src/components/ChatPanel.tsx
++++ b/src/components/ChatPanel.tsx
+@@ -70,7 +70,7 @@ export default function ChatPanel({
+                 : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/25 hover:bg-cyan-500/20'
+             }`}
+           >
+-            <span>{selectedModel === 'claude' ? 'Claude 3.5 Sonnet' : 'Gemini 3.5 Flash'}</span>
++            <span>{selectedModel === 'claude' ? 'Claude Sonnet 4.6' : 'Gemini 3.5 Flash'}</span>
+             <span className="text-[7px]" style={{ transform: isDropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s ease' }}>▼</span>
+           </button>
+           
+@@ -88,7 +88,7 @@ export default function ChatPanel({
+                   selectedModel === 'claude' ? 'text-purple-400 font-semibold' : 'text-text-secondary'
+                 }`}
+               >
+-                <span>Claude 3.5 Sonnet</span>
++                <span>Claude Sonnet 4.6</span>
+                 {selectedModel === 'claude' && <span className="text-[8px]">●</span>}
+               </button>
+               <button
+diff --git a/src/hooks/useDB.ts b/src/hooks/useDB.ts
+index aeccce2..865b9eb 100644
+--- a/src/hooks/useDB.ts
++++ b/src/hooks/useDB.ts
+@@ -40,14 +40,17 @@ export function useStreaks(refreshKey = 0) {
+   return streaks;
+ }
+ 
+-export function useGoals() {
++export function useGoals(refreshKey = 0) {
+   const [goals, setGoals] = useState<Goal[]>([]);
+ 
+-  useEffect(() => {
++  const load = useCallback(async () => {
+     if (!isElectron) return;
+-    window.pathkeeper.db.getGoals().then(setGoals);
++    const data = await window.pathkeeper.db.getGoals();
++    setGoals(data);
+   }, []);
+ 
++  useEffect(() => { load(); }, [load, refreshKey]);
++
+   return goals;
+ }
+ 

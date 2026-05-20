@@ -1,11 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type {
-  Tool,
-  ToolsBetaMessageParam,
-  ToolResultBlockParam,
-  ToolUseBlock,
-  ToolsBetaContentBlock,
-} from '@anthropic-ai/sdk/resources/beta/tools/messages';
 import { BrowserWindow } from 'electron';
 import { getSetting, addTask, updateTask, completeTaskById, addToFocus, addContact, addCountdown, deleteCountdown, updateCountdown } from './db';
 
@@ -24,12 +17,13 @@ export function setApiKey(key: string) {
   client = new Anthropic({ apiKey: key });
 }
 
-const TOOLS: Tool[] = [
+// Standard messages API tool definitions (no beta namespace)
+const TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: 'complete_task',
     description: 'Mark a task as done. Use when the user says they completed or finished a task.',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         task_id: { type: 'string', description: 'The ID of the task to mark complete' },
       },
@@ -40,7 +34,7 @@ const TOOLS: Tool[] = [
     name: 'add_task',
     description: "Create a new task and optionally add it to today's daily focus (max 3 focus slots).",
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         title: { type: 'string', description: 'Task title' },
         domain: {
@@ -58,7 +52,7 @@ const TOOLS: Tool[] = [
     name: 'update_task',
     description: "Update a task's title or domain.",
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         task_id: { type: 'string' },
         title: { type: 'string' },
@@ -71,7 +65,7 @@ const TOOLS: Tool[] = [
     name: 'add_contact',
     description: 'Add a new person to the network panel.',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         name: { type: 'string' },
         role: { type: 'string' },
@@ -89,7 +83,7 @@ const TOOLS: Tool[] = [
     name: 'add_countdown',
     description: 'Add a countdown event (deadline, meeting, or milestone) to the countdown panel.',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         title: { type: 'string', description: 'Event name' },
         event_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
@@ -101,7 +95,7 @@ const TOOLS: Tool[] = [
     name: 'update_countdown',
     description: 'Update a countdown event (title or date).',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         countdown_id: { type: 'string', description: 'The ID of the countdown to update' },
         title: { type: 'string', description: 'New title (optional)' },
@@ -114,7 +108,7 @@ const TOOLS: Tool[] = [
     name: 'delete_countdown',
     description: 'Delete a countdown event from the countdown panel. Use when the user requests to remove or delete a countdown.',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
         countdown_id: { type: 'string', description: 'The ID of the countdown to delete' },
       },
@@ -199,6 +193,7 @@ export async function sendMessage(
   messages: { role: 'user' | 'assistant'; content: string }[],
   model: 'claude' | 'gemini' = 'claude'
 ): Promise<string> {
+  // ── Gemini path (streaming, no tools) ────────────────────────────
   if (model === 'gemini') {
     const { getGeminiClient } = require('./gemini');
     const geminiClient = getGeminiClient();
@@ -235,17 +230,24 @@ export async function sendMessage(
     }
   }
 
+  // ── Claude path (streaming + tool use agentic loop) ──────────────
   const anthropic = getClient();
 
-  const sdkMessages: ToolsBetaMessageParam[] = messages.map(m => ({
+  // Build the messages array for the API — supports both string and ContentBlock[]
+  const sdkMessages: Anthropic.Messages.MessageParam[] = messages.map(m => ({
     role: m.role,
     content: m.content,
   }));
 
   let fullText = '';
+  const toolSystemLogs: string[] = [];
+  const MAX_TOOL_ROUNDS = 5;
+  let round = 0;
 
-  while (true) {
-    const response = await anthropic.beta.tools.messages.create({
+  // Agentic loop: keep going until the model stops using tools
+  while (round < MAX_TOOL_ROUNDS) {
+    round++;
+    const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
@@ -253,33 +255,88 @@ export async function sendMessage(
       tools: TOOLS,
     });
 
-    for (const block of response.content as ToolsBetaContentBlock[]) {
-      if (block.type === 'text') fullText += block.text;
-    }
-
-    if (response.stop_reason !== 'tool_use') break;
-
-    const toolResults: ToolResultBlockParam[] = [];
-    for (const block of response.content as ToolsBetaContentBlock[]) {
-      if (block.type === 'tool_use') {
-        const toolBlock = block as ToolUseBlock;
-        const result = await executeToolCall(toolBlock.name, toolBlock.input as Record<string, unknown>);
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolBlock.id,
-          content: [{ type: 'text', text: JSON.stringify(result) }],
-        });
+    // Collect text blocks and stream them incrementally
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        fullText += block.text;
+        win.webContents.send('ai:stream-chunk', block.text);
       }
     }
 
+    // If the model didn't request tool use, we're done
+    if (response.stop_reason !== 'tool_use') break;
+
+    // Process tool calls
+    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+    for (const block of response.content) {
+      if (block.type === 'tool_use') {
+        let result: unknown;
+        try {
+          result = await executeToolCall(block.name, block.input as Record<string, unknown>);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[Tool error] ${block.name}:`, errMsg);
+          result = { error: errMsg };
+        }
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: JSON.stringify(result),
+        });
+        // Build system log line for the chat
+        const logLine = buildToolLog(block.name, block.input as Record<string, unknown>, result);
+        if (logLine) {
+          toolSystemLogs.push(logLine);
+          // Stream the system log immediately so user sees it
+          win.webContents.send('ai:stream-chunk', `\n[SYSTEM] ${logLine}\n`);
+          fullText += `\n[SYSTEM] ${logLine}\n`;
+        }
+      }
+    }
+
+    // Append the assistant's response (with tool_use blocks) and tool results
     sdkMessages.push({
       role: 'assistant',
-      content: response.content as ToolsBetaMessageParam['content'],
+      content: response.content,
     });
-    sdkMessages.push({ role: 'user', content: toolResults });
+    sdkMessages.push({
+      role: 'user',
+      content: toolResults,
+    });
   }
 
-  if (fullText) win.webContents.send('ai:stream-chunk', fullText);
+  // Notify UI to refresh AFTER the entire agentic loop completes
+  // This ensures all tool mutations are done before the UI re-fetches
+  if (toolSystemLogs.length > 0) {
+    win.webContents.send('db:changed');
+    win.webContents.send('countdowns-updated');
+  }
+
   win.webContents.send('ai:stream-done');
   return fullText;
+}
+
+// Build a human-readable log line for tool executions
+function buildToolLog(name: string, input: Record<string, unknown>, result: unknown): string | null {
+  const r = result as Record<string, unknown>;
+  if (!r.success) return `Tool ${name} failed: ${JSON.stringify(r)}`;
+
+  switch (name) {
+    case 'complete_task':
+      return `Task ${input.task_id} marked complete.`;
+    case 'add_task':
+      return `Task added: "${input.title}" (${input.domain})${r.added_to_focus ? ' — added to focus' : ''}.`;
+    case 'update_task':
+      return `Task ${input.task_id} updated.`;
+    case 'add_contact':
+      return `Contact added: "${input.name}".`;
+    case 'add_countdown':
+      return `Countdown added: "${input.title}" on ${input.event_date}.`;
+    case 'update_countdown':
+      return `Countdown ${input.countdown_id} updated.`;
+    case 'delete_countdown':
+      return `Countdown ${input.countdown_id} deleted.`;
+    default:
+      return null;
+  }
 }

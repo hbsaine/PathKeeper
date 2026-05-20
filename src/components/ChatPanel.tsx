@@ -70,7 +70,7 @@ export default function ChatPanel({
                 : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/25 hover:bg-cyan-500/20'
             }`}
           >
-            <span>{selectedModel === 'claude' ? 'Claude 3.5 Sonnet' : 'Gemini 3.5 Flash'}</span>
+            <span>{selectedModel === 'claude' ? 'Claude Sonnet 4.6' : 'Gemini 3.5 Flash'}</span>
             <span className="text-[7px]" style={{ transform: isDropdownOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s ease' }}>▼</span>
           </button>
           
@@ -88,7 +88,7 @@ export default function ChatPanel({
                   selectedModel === 'claude' ? 'text-purple-400 font-semibold' : 'text-text-secondary'
                 }`}
               >
-                <span>Claude 3.5 Sonnet</span>
+                <span>Claude Sonnet 4.6</span>
                 {selectedModel === 'claude' && <span className="text-[8px]">●</span>}
               </button>
               <button

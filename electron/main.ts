@@ -6,6 +6,9 @@ import * as gemini from './gemini';
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Track the current window for AI streaming (updated when window is created)
+let mainWin: BrowserWindow | null = null;
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -21,6 +24,8 @@ function createWindow() {
     },
   });
 
+  mainWin = win;
+
   if (isDev) {
     win.loadURL('http://localhost:5173');
     win.webContents.openDevTools({ mode: 'detach' });
@@ -28,13 +33,23 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Register IPC handlers with win reference for streaming
-  registerIPC(win);
+  win.on('closed', () => {
+    mainWin = null;
+  });
 
   return win;
 }
 
-function registerIPC(win: BrowserWindow) {
+// Helper to get the current window (for AI handlers that need to stream)
+function getWin(): BrowserWindow {
+  if (mainWin && !mainWin.isDestroyed()) return mainWin;
+  const wins = BrowserWindow.getAllWindows();
+  if (wins.length > 0) return wins[0];
+  throw new Error('No window available');
+}
+
+// Register IPC handlers ONCE at app startup (not per-window)
+function registerIPC() {
   // DB handlers
   ipcMain.handle('db:getTasks', () => db.getTasks());
   ipcMain.handle('db:addTask', (_e, task) => db.addTask(task));
@@ -71,8 +86,9 @@ function registerIPC(win: BrowserWindow) {
     if (key === 'gemini_api_key') gemini.setGeminiApiKey(value);
   });
 
-  // AI handler
+  // AI handler — uses getWin() to dynamically resolve the current window
   ipcMain.handle('ai:sendMessage', async (_e, systemPrompt, messages, model) => {
+    const win = getWin();
     try {
       return await ai.sendMessage(win, systemPrompt, messages, model);
     } catch (err: unknown) {
@@ -98,6 +114,7 @@ function registerIPC(win: BrowserWindow) {
   });
 
   ipcMain.handle('ai:submitGrillAnswer', async (_e, taskId, answer) => {
+    const win = getWin();
     try {
       return await gemini.submitGrillAnswer(taskId, answer, win);
     } catch (err: unknown) {
@@ -124,6 +141,10 @@ app.whenReady().then(() => {
     openAsHidden: false,
   });
 
+  // Register IPC handlers ONCE
+  registerIPC();
+
+  // Create the first window
   createWindow();
 
   app.on('activate', () => {

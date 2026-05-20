@@ -40,13 +40,16 @@ export function useStreaks(refreshKey = 0) {
   return streaks;
 }
 
-export function useGoals() {
+export function useGoals(refreshKey = 0) {
   const [goals, setGoals] = useState<Goal[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!isElectron) return;
-    window.pathkeeper.db.getGoals().then(setGoals);
+    const data = await window.pathkeeper.db.getGoals();
+    setGoals(data);
   }, []);
+
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   return goals;
 }

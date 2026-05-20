@@ -20,7 +20,7 @@ export default function App() {
 
   const { focus, completeTask } = useDailyFocus(refreshKey);
   const streaks = useStreaks(refreshKey);
-  const goals = useGoals();
+  const goals = useGoals(refreshKey);
   const tracks = useSkillTracks(refreshKey);
   const countdowns = useCountdowns(refreshKey);
 

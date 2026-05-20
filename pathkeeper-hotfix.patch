@@ -1,0 +1,74 @@
+diff --git a/electron/ai.ts b/electron/ai.ts
+index b2f0256..ab34677 100644
+--- a/electron/ai.ts
++++ b/electron/ai.ts
+@@ -241,9 +241,12 @@ export async function sendMessage(
+ 
+   let fullText = '';
+   const toolSystemLogs: string[] = [];
++  const MAX_TOOL_ROUNDS = 5;
++  let round = 0;
+ 
+   // Agentic loop: keep going until the model stops using tools
+-  while (true) {
++  while (round < MAX_TOOL_ROUNDS) {
++    round++;
+     const response = await anthropic.messages.create({
+       model: 'claude-sonnet-4-6',
+       max_tokens: 2048,
+@@ -267,7 +270,14 @@ export async function sendMessage(
+     const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+     for (const block of response.content) {
+       if (block.type === 'tool_use') {
+-        const result = await executeToolCall(block.name, block.input as Record<string, unknown>);
++        let result: unknown;
++        try {
++          result = await executeToolCall(block.name, block.input as Record<string, unknown>);
++        } catch (err) {
++          const errMsg = err instanceof Error ? err.message : String(err);
++          console.error(`[Tool error] ${block.name}:`, errMsg);
++          result = { error: errMsg };
++        }
+         toolResults.push({
+           type: 'tool_result',
+           tool_use_id: block.id,
+diff --git a/electron/db.ts b/electron/db.ts
+index 86db109..7551447 100644
+--- a/electron/db.ts
++++ b/electron/db.ts
+@@ -246,7 +246,7 @@ export function getDailyFocus(date: string) {
+ 
+ export function completeFocusTask(taskId: string, date: string) {
+   db.prepare('UPDATE daily_focus SET completed = 1 WHERE task_id = ? AND date = ?').run(taskId, date);
+-  db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', taskId);
++  db.prepare("UPDATE tasks SET status = ?, completed_at = datetime('now') WHERE id = ?").run('done', taskId);
+   updateStreak('daily_tasks');
+ }
+ 
+@@ -294,7 +294,7 @@ export function getLessons(trackId: string) {
+ }
+ 
+ export function completeLesson(lessonId: string) {
+-  db.prepare('UPDATE lessons SET completed = 1, completed_at = datetime("now") WHERE id = ?').run(lessonId);
++  db.prepare("UPDATE lessons SET completed = 1, completed_at = datetime('now') WHERE id = ?").run(lessonId);
+   const lesson = db.prepare('SELECT * FROM lessons WHERE id = ?').get(lessonId) as { track_id: string } | undefined;
+   if (lesson) {
+     db.prepare('UPDATE skill_tracks SET completed_lessons = completed_lessons + 1 WHERE id = ?').run(lesson.track_id);
+@@ -356,7 +356,7 @@ export function getGoals() {
+ 
+ export function completeTaskById(id: string) {
+   const today = new Date().toISOString().slice(0, 10);
+-  db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', id);
++  db.prepare("UPDATE tasks SET status = ?, completed_at = datetime('now') WHERE id = ?").run('done', id);
+   db.prepare('UPDATE daily_focus SET completed = 1 WHERE task_id = ? AND date = ?').run(id, today);
+   updateStreak('daily_tasks');
+ }
+@@ -397,7 +397,7 @@ export function toggleFocusTask(taskId: string, date: string) {
+   const newCompleted = isCurrentlyDone ? 0 : 1;
+   db.prepare('UPDATE daily_focus SET completed = ? WHERE task_id = ? AND date = ?').run(newCompleted, taskId, date);
+   if (newCompleted === 1) {
+-    db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', taskId);
++    db.prepare("UPDATE tasks SET status = ?, completed_at = datetime('now') WHERE id = ?").run('done', taskId);
+     updateStreak('daily_tasks');
+   } else {
+     db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run('pending', taskId);

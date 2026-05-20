@@ -246,7 +246,7 @@ export function getDailyFocus(date: string) {
 
 export function completeFocusTask(taskId: string, date: string) {
   db.prepare('UPDATE daily_focus SET completed = 1 WHERE task_id = ? AND date = ?').run(taskId, date);
-  db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', taskId);
+  db.prepare("UPDATE tasks SET status = ?, completed_at = datetime('now') WHERE id = ?").run('done', taskId);
   updateStreak('daily_tasks');
 }
 
@@ -294,7 +294,7 @@ export function getLessons(trackId: string) {
 }
 
 export function completeLesson(lessonId: string) {
-  db.prepare('UPDATE lessons SET completed = 1, completed_at = datetime("now") WHERE id = ?').run(lessonId);
+  db.prepare("UPDATE lessons SET completed = 1, completed_at = datetime('now') WHERE id = ?").run(lessonId);
   const lesson = db.prepare('SELECT * FROM lessons WHERE id = ?').get(lessonId) as { track_id: string } | undefined;
   if (lesson) {
     db.prepare('UPDATE skill_tracks SET completed_lessons = completed_lessons + 1 WHERE id = ?').run(lesson.track_id);
@@ -356,7 +356,7 @@ export function getGoals() {
 
 export function completeTaskById(id: string) {
   const today = new Date().toISOString().slice(0, 10);
-  db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', id);
+  db.prepare("UPDATE tasks SET status = ?, completed_at = datetime('now') WHERE id = ?").run('done', id);
   db.prepare('UPDATE daily_focus SET completed = 1 WHERE task_id = ? AND date = ?').run(id, today);
   updateStreak('daily_tasks');
 }
@@ -397,7 +397,7 @@ export function toggleFocusTask(taskId: string, date: string) {
   const newCompleted = isCurrentlyDone ? 0 : 1;
   db.prepare('UPDATE daily_focus SET completed = ? WHERE task_id = ? AND date = ?').run(newCompleted, taskId, date);
   if (newCompleted === 1) {
-    db.prepare('UPDATE tasks SET status = ?, completed_at = datetime("now") WHERE id = ?').run('done', taskId);
+    db.prepare("UPDATE tasks SET status = ?, completed_at = datetime('now') WHERE id = ?").run('done', taskId);
     updateStreak('daily_tasks');
   } else {
     db.prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?').run('pending', taskId);
