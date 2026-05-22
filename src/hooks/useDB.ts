@@ -82,6 +82,20 @@ export function useCountdowns(refreshKey = 0) {
   return countdowns;
 }
 
+export function usePreppedTasks(refreshKey = 0) {
+  const [preppedTasks, setPreppedTasks] = useState<Array<{ id: string; title: string }>>([]);
+
+  const load = useCallback(async () => {
+    if (!isElectron) return;
+    const data = await window.pathkeeper.db.getPreppedTasks();
+    setPreppedTasks(data);
+  }, []);
+
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  return preppedTasks;
+}
+
 export function useSetting(key: string) {
   const [value, setValue] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);

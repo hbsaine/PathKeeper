@@ -11,10 +11,22 @@ export function getDB(): Database.Database {
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
     initSchema();
+    runMigrations();
     seedIfEmpty();
     seedCountdownsIfEmpty();
   }
   return db;
+}
+
+function runMigrations() {
+  const chatCols = db.prepare('PRAGMA table_info(chat_messages)').all() as Array<{ name: string }>;
+  if (!chatCols.some(c => c.name === 'model')) {
+    db.exec("ALTER TABLE chat_messages ADD COLUMN model TEXT DEFAULT 'claude'");
+  }
+  const cdCols = db.prepare('PRAGMA table_info(countdowns)').all() as Array<{ name: string }>;
+  if (!cdCols.some(c => c.name === 'event_time')) {
+    db.exec('ALTER TABLE countdowns ADD COLUMN event_time TEXT');
+  }
 }
 
 function initSchema() {
@@ -331,10 +343,14 @@ export function getChatHistory() {
   return db.prepare('SELECT * FROM chat_messages ORDER BY timestamp DESC LIMIT 40').all();
 }
 
-export function addChatMessage(role: string, content: string) {
+export function addChatMessage(role: string, content: string, model = 'claude') {
   const id = uuidv4();
-  db.prepare('INSERT INTO chat_messages (id, role, content) VALUES (?, ?, ?)').run(id, role, content);
+  db.prepare('INSERT INTO chat_messages (id, role, content, model) VALUES (?, ?, ?, ?)').run(id, role, content, model);
   return id;
+}
+
+export function getPreppedTasks() {
+  return db.prepare("SELECT id, title FROM tasks WHERE ai_prepped = 1 AND status != ? ORDER BY created_at DESC LIMIT 5").all('done') as Array<{ id: string; title: string }>;
 }
 
 export function clearChatHistory() {
@@ -373,9 +389,9 @@ export function getCountdowns() {
   return db.prepare('SELECT * FROM countdowns ORDER BY event_date ASC').all();
 }
 
-export function addCountdown(title: string, event_date: string) {
+export function addCountdown(title: string, event_date: string, event_time?: string) {
   const id = uuidv4();
-  db.prepare('INSERT INTO countdowns (id, title, event_date) VALUES (?, ?, ?)').run(id, title, event_date);
+  db.prepare('INSERT INTO countdowns (id, title, event_date, event_time) VALUES (?, ?, ?, ?)').run(id, title, event_date, event_time ?? null);
   return id;
 }
 
@@ -383,7 +399,7 @@ export function deleteCountdown(id: string) {
   db.prepare('DELETE FROM countdowns WHERE id = ?').run(id);
 }
 
-export function updateCountdown(id: string, updates: { title?: string; event_date?: string }) {
+export function updateCountdown(id: string, updates: { title?: string; event_date?: string; event_time?: string }) {
   const entries = Object.entries(updates).filter(([, v]) => v !== undefined);
   if (!entries.length) return;
   const fields = entries.map(([k]) => `${k} = ?`).join(', ');

@@ -105,6 +105,32 @@ interface Props {
 export default function ChatMessage({ message }: Props) {
   const isUser = message.role === 'user';
 
+  // Error message — red styling, not saved to DB
+  if (message.content.startsWith('[ERROR]')) {
+    return (
+      <div className="flex justify-start fade-in-up">
+        <div
+          className="max-w-[92%] px-4 py-3 rounded-xl rounded-tl-sm"
+          style={{ background: 'rgba(239,68,68,0.05)', borderLeft: '2px solid #ef4444' }}
+        >
+          <p className="text-[12px] font-mono text-danger leading-relaxed">{message.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Model switch separator — horizontal divider
+  if (message.content.startsWith('[MODEL_SWITCH]')) {
+    const label = message.content.replace('[MODEL_SWITCH] ', '');
+    return (
+      <div className="flex items-center gap-3 py-1">
+        <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+        <span className="text-[10px] text-text-muted font-mono whitespace-nowrap">— {label} —</span>
+        <div className="flex-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+      </div>
+    );
+  }
+
   if (isUser) {
     return (
       <div className="flex justify-end fade-in-up">

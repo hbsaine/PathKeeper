@@ -148,6 +148,12 @@ export default function ChatPanel({
     >
       {header}
 
+      {selectedModel === 'gemini' && (
+        <div className="px-4 py-1.5 text-[10px] text-cyan-400/60 bg-cyan-500/5 border-b border-cyan-500/10 font-mono flex-shrink-0">
+          Gemini mode — chat only, no panel modifications
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
         {messages.length === 0 && !isLoading && (
           <div className="text-center py-14 select-none">
@@ -162,7 +168,7 @@ export default function ChatPanel({
           </div>
         )}
 
-        {messages.slice(-10).map(msg => (
+        {messages.map(msg => (
           <ChatMessageComponent key={msg.id} message={msg} />
         ))}
 
@@ -172,7 +178,7 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      <ChatInput onSend={onSend} disabled={isLoading || hasApiKey === null} selectedModel={selectedModel} />
+      <ChatInput onSend={onSend} disabled={isLoading || hasApiKey === null} />
     </div>
   );
 }

@@ -23,13 +23,14 @@ contextBridge.exposeInMainWorld('pathkeeper', {
 
     getStreaks: () => ipcRenderer.invoke('db:getStreaks'),
     getChatHistory: () => ipcRenderer.invoke('db:getChatHistory'),
-    addChatMessage: (role: string, content: string) => ipcRenderer.invoke('db:addChatMessage', role, content),
+    addChatMessage: (role: string, content: string, model?: string) => ipcRenderer.invoke('db:addChatMessage', role, content, model),
     getGoals: () => ipcRenderer.invoke('db:getGoals'),
+    getPreppedTasks: () => ipcRenderer.invoke('db:getPreppedTasks'),
 
     getSetting: (key: string) => ipcRenderer.invoke('db:getSetting', key),
     setSetting: (key: string, value: string) => ipcRenderer.invoke('db:setSetting', key, value),
     getCountdowns: () => ipcRenderer.invoke('db:getCountdowns'),
-    addCountdown: (title: string, eventDate: string) => ipcRenderer.invoke('db:addCountdown', title, eventDate),
+    addCountdown: (title: string, eventDate: string, eventTime?: string) => ipcRenderer.invoke('db:addCountdown', title, eventDate, eventTime),
     deleteCountdown: (id: string) => ipcRenderer.invoke('db:deleteCountdown', id),
     clearChatHistory: () => ipcRenderer.invoke('db:clearChatHistory'),
   },
@@ -63,6 +64,12 @@ contextBridge.exposeInMainWorld('pathkeeper', {
     },
     removeCountdownsUpdatedListeners: () => {
       ipcRenderer.removeAllListeners('countdowns-updated');
+    },
+    onMorningBriefing: (cb: () => void) => {
+      ipcRenderer.on('ai:morning-briefing', cb);
+    },
+    removeMorningBriefingListener: () => {
+      ipcRenderer.removeAllListeners('ai:morning-briefing');
     },
   },
 });

@@ -43,6 +43,18 @@ export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
 
     const key = await window.pathkeeper.db.getSetting(model === 'claude' ? 'anthropic_api_key' : 'gemini_api_key');
     setHasApiKey(!!key);
+
+    // Visual separator in chat (not saved to DB)
+    const modelLabel = model === 'claude' ? 'Claude Sonnet 4.6' : 'Gemini 3.5 Flash';
+    const separatorMsg: ChatMessage = {
+      id: `model-switch-${Date.now()}`,
+      role: 'assistant',
+      content: `[MODEL_SWITCH] Switched to ${modelLabel}`,
+      timestamp: new Date().toISOString(),
+    };
+    const withSeparator = [...messagesRef.current, separatorMsg];
+    messagesRef.current = withSeparator;
+    setMessages(withSeparator);
   }, []);
 
   const sendMessage = useCallback(async (userText: string) => {
@@ -61,7 +73,7 @@ export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
     setIsLoading(true);
     setStreamingText('');
 
-    await window.pathkeeper.db.addChatMessage('user', userText);
+    await window.pathkeeper.db.addChatMessage('user', userText, selectedModel);
 
     const systemPrompt = buildSystemPrompt({ focus, goals, streaks, countdowns });
 
@@ -102,7 +114,7 @@ export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
       messagesRef.current = finalMessages;
       setMessages(finalMessages);
 
-      window.pathkeeper.db.addChatMessage('assistant', accumulated);
+      window.pathkeeper.db.addChatMessage('assistant', accumulated, selectedModel);
     });
 
     try {
@@ -114,6 +126,15 @@ export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
       }
     } catch (err) {
       console.error('AI error:', err);
+      const errorMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `[ERROR] ${err instanceof Error ? err.message : 'Connection failed. Check your API key and network.'}`,
+        timestamp: new Date().toISOString(),
+      };
+      const errorMessages = [...messagesRef.current, errorMsg];
+      messagesRef.current = errorMessages;
+      setMessages(errorMessages);
       setIsLoading(false);
       setStreamingText('');
     }
@@ -134,6 +155,58 @@ export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
     messagesRef.current = [];
   }, []);
 
+  const triggerMorningBriefing = useCallback(async () => {
+    if (!isElectron || isLoading) return;
+
+    setIsLoading(true);
+    setStreamingText('');
+
+    const systemPromptStr = buildSystemPrompt({ focus, goals, streaks, countdowns });
+    const briefingSystemPrompt = systemPromptStr + '\n\nADDITIONAL INSTRUCTION: Generate this morning\'s briefing now. Include: today\'s focus tasks with status, approaching countdowns (next 7 days), streak status, and one proactive recommendation. Use tools proactively — if RSM is within 30 days and there are no prep tasks, add them. Be direct and dense. No greeting.';
+
+    window.pathkeeper.ai.removeStreamListeners();
+
+    let accumulated = '';
+    window.pathkeeper.ai.onStreamChunk((chunk: string) => {
+      accumulated += chunk;
+      setStreamingText(accumulated);
+    });
+
+    window.pathkeeper.ai.onStreamDone(() => {
+      setStreamingText('');
+      setIsLoading(false);
+
+      if (!accumulated || accumulated === '__NO_API_KEY__') {
+        if (accumulated === '__NO_API_KEY__') setHasApiKey(false);
+        return;
+      }
+
+      const assistantMsg: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: accumulated,
+        timestamp: new Date().toISOString(),
+      };
+      const finalMessages = [...messagesRef.current, assistantMsg];
+      messagesRef.current = finalMessages;
+      setMessages(finalMessages);
+
+      window.pathkeeper.db.addChatMessage('assistant', accumulated, 'claude');
+    });
+
+    try {
+      await window.pathkeeper.ai.sendMessage(
+        briefingSystemPrompt,
+        [{ role: 'user', content: 'GENERATE_MORNING_BRIEFING' }],
+        'claude'
+      );
+    } catch (err) {
+      console.error('Morning briefing error:', err);
+      setIsLoading(false);
+      setStreamingText('');
+    }
+  }, [focus, goals, streaks, countdowns, isLoading]);
+
   return {
     messages,
     selectedModel,
@@ -145,5 +218,6 @@ export function useAI({ focus, goals, streaks, countdowns }: UseAIOptions) {
     sendMessage,
     setApiKey,
     clearChat,
+    triggerMorningBriefing,
   };
 }

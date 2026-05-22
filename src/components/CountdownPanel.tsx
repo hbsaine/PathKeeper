@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Countdown } from '../types';
-import { daysUntil } from '../lib/formatters';
+import { daysUntil, formatCountdownDisplay, formatTime } from '../lib/formatters';
 
 const isElectron = typeof window !== 'undefined' && !!window.pathkeeper;
 
@@ -74,8 +74,20 @@ export default function CountdownPanel({ countdowns: propCountdowns }: Props) {
       ) : (
         <div className="space-y-3">
           {countdowns.map((cd, i) => {
-            const days   = daysUntil(cd.event_date);
-            const urgent = days >= 0 && days < 30;
+            const days    = daysUntil(cd.event_date);
+            const urgent  = days >= 0 && days < 30;
+            const label   = formatCountdownDisplay(cd.event_date, cd.event_time);
+            const isHours = label.startsWith('in ') && (label.includes('h') || label.includes('m'));
+
+            // For sub-24h events, show the hours remaining as the big number
+            let bigNum: string;
+            if (isHours && cd.event_time) {
+              const target = new Date(`${cd.event_date}T${cd.event_time}:00`);
+              const diffH = (target.getTime() - Date.now()) / (1000 * 60 * 60);
+              bigNum = String(Math.max(0, Math.floor(diffH)));
+            } else {
+              bigNum = String(Math.abs(days));
+            }
 
             return (
               <div
@@ -93,16 +105,13 @@ export default function CountdownPanel({ countdowns: propCountdowns }: Props) {
                         color: urgent ? '#d4a017' : '#6b6580',
                       }}
                     >
-                      {Math.abs(days)}
+                      {bigNum}
                     </span>
                     <p className="text-[11px] text-text-secondary truncate mt-0.5">{cd.title}</p>
-                    <p className="text-[10px] text-text-muted">
-                      {days === 0
-                        ? 'today'
-                        : days < 0
-                        ? `${Math.abs(days)}d ago`
-                        : 'days away'}
-                    </p>
+                    {cd.event_time && (
+                      <p className="text-[10px] text-text-muted">{formatTime(cd.event_time)}</p>
+                    )}
+                    <p className="text-[10px] text-text-muted">{label}</p>
                   </div>
                   <button
                     onClick={async () => {

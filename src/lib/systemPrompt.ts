@@ -1,5 +1,5 @@
 import { Countdown, DailyFocusItem, Goal, Streak } from '../types';
-import { daysUntil, formatRelativeDate } from './formatters';
+import { daysUntil, formatRelativeDate, formatTime } from './formatters';
 
 interface SystemPromptContext {
   focus: DailyFocusItem[];
@@ -36,7 +36,17 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     ? ctx.countdowns.map(cd => {
         const days = daysUntil(cd.event_date);
         const flag = days < 0 ? ' [PAST]' : days < 14 ? ' [URGENT]' : '';
-        const rel = days < 0 ? `${Math.abs(days)} days ago` : `${days} days away`;
+        let rel: string;
+        if (days < 0) {
+          rel = `${Math.abs(days)} days ago`;
+        } else if (cd.event_time) {
+          const timeLabel = formatTime(cd.event_time);
+          rel = days === 0 ? `TODAY at ${timeLabel}` : `${days} days away at ${timeLabel}`;
+        } else if (days === 0) {
+          rel = 'TODAY';
+        } else {
+          rel = `${days} days away`;
+        }
         return `  - ${cd.title} [ID: ${cd.id}]${flag} — ${rel}`;
       }).join('\n')
     : '  - None set';
@@ -76,6 +86,12 @@ RULES:
 - If he snoozes the same task 3 days in a row, escalate: "You've been avoiding [task] for 3 days. What's actually blocking you?"
 - When he asks "what should I do?" — give ONE answer, not a list of options
 - Pre-work should be DONE, not suggested. Don't say "you should draft an email to Nate." Say "here's the email to Nate. Review and send."
+
+TASK INFERENCE:
+- When the user mentions something they need to do ("I need to email Nate", "gotta pack for Minneapolis", "should look into COBIT"), immediately call add_task with an appropriate title, domain, and due_date if inferable.
+- If the task is urgent (due within 3 days), set add_to_focus: true.
+- Do NOT ask "would you like me to create a task for that?" — just do it. You are a chief of staff, not a chatbot.
+- After creating the task, mention it briefly in your response: "Tracked: [task title]"
 
 TOOLS YOU HAVE:
 You can directly modify the left panel using tools. Use them proactively:

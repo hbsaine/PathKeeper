@@ -4,12 +4,14 @@ import TodaysFocus from './TodaysFocus';
 import CountdownPanel from './CountdownPanel';
 import SkillsPanel from './SkillsPanel';
 import { formatDayHeader } from '../lib/formatters';
+import { usePreppedTasks } from '../hooks/useDB';
 
 interface Props {
   focus: DailyFocusItem[];
   streaks: Streak[];
   tracks: SkillTrack[];
   countdowns: Countdown[];
+  refreshKey: number;
   onCompleteTask: (taskId: string) => void;
   onOpenSettings: () => void;
 }
@@ -105,8 +107,9 @@ function AlchemyCircle({ style }: { style?: CSSProperties }) {
   );
 }
 
-export default function CommandCenter({ focus, streaks, tracks, countdowns, onCompleteTask, onOpenSettings }: Props) {
+export default function CommandCenter({ focus, streaks, tracks, countdowns, refreshKey, onCompleteTask, onOpenSettings }: Props) {
   const streak = streaks.find(s => s.type === 'daily_tasks')?.current_streak ?? 0;
+  const preppedTasks = usePreppedTasks(refreshKey);
 
   return (
     <div className="flex flex-col h-full relative overflow-hidden">
@@ -196,18 +199,23 @@ export default function CommandCenter({ focus, streaks, tracks, countdowns, onCo
             <span className="panel-label">AI Pre-Working</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {['RSM packing list', 'COBIT overview', 'Email to Nate'].map(item => (
-              <span
-                key={item}
-                className="text-[11px] text-text-muted px-2.5 py-1 rounded-full cursor-default transition-all duration-200 hover:text-accent-light"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(147,51,234,0.07), rgba(147,51,234,0.02))',
-                  border: '1px solid rgba(147,51,234,0.18)',
-                }}
-              >
-                {item}
-              </span>
-            ))}
+            {preppedTasks.length === 0 ? (
+              <span className="text-[11px] text-text-muted italic">No pre-work ready</span>
+            ) : (
+              preppedTasks.map(task => (
+                <span
+                  key={task.id}
+                  className="text-[11px] text-text-muted px-2.5 py-1 rounded-full cursor-default transition-all duration-200 hover:text-accent-light"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(147,51,234,0.07), rgba(147,51,234,0.02))',
+                    border: '1px solid rgba(147,51,234,0.18)',
+                  }}
+                  title={task.title}
+                >
+                  {task.title.length > 24 ? task.title.slice(0, 24) + '…' : task.title}
+                </span>
+              ))
+            )}
           </div>
         </div>
       </div>

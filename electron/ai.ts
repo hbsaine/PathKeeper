@@ -87,19 +87,21 @@ const TOOLS: Anthropic.Messages.Tool[] = [
       properties: {
         title: { type: 'string', description: 'Event name' },
         event_date: { type: 'string', description: 'ISO date YYYY-MM-DD' },
+        event_time: { type: 'string', description: 'Optional time in HH:MM 24-hour format (e.g. "14:30"). Include when the event has a specific time.' },
       },
       required: ['title', 'event_date'],
     },
   },
   {
     name: 'update_countdown',
-    description: 'Update a countdown event (title or date).',
+    description: 'Update a countdown event (title, date, or time).',
     input_schema: {
       type: 'object' as const,
       properties: {
         countdown_id: { type: 'string', description: 'The ID of the countdown to update' },
         title: { type: 'string', description: 'New title (optional)' },
         event_date: { type: 'string', description: 'New ISO date (optional)' },
+        event_time: { type: 'string', description: 'New time in HH:MM 24-hour format (optional)' },
       },
       required: ['countdown_id'],
     },
@@ -162,7 +164,7 @@ async function executeToolCall(
       return { success: true, contact_id: id };
     }
     case 'add_countdown': {
-      const id = addCountdown(input.title as string, input.event_date as string);
+      const id = addCountdown(input.title as string, input.event_date as string, input.event_time as string | undefined);
       notify();
       notifyCountdowns();
       return { success: true, countdown_id: id };
@@ -171,6 +173,7 @@ async function executeToolCall(
       updateCountdown(input.countdown_id as string, {
         title: input.title as string | undefined,
         event_date: input.event_date as string | undefined,
+        event_time: input.event_time as string | undefined,
       });
       notify();
       notifyCountdowns();
@@ -230,10 +233,9 @@ export async function sendMessage(
     }
   }
 
-  // ── Claude path (streaming + tool use agentic loop) ──────────────
+  // ── Claude path (true token-by-token streaming + tool use agentic loop) ──
   const anthropic = getClient();
 
-  // Build the messages array for the API — supports both string and ContentBlock[]
   const sdkMessages: Anthropic.Messages.MessageParam[] = messages.map(m => ({
     role: m.role,
     content: m.content,
@@ -247,7 +249,9 @@ export async function sendMessage(
   // Agentic loop: keep going until the model stops using tools
   while (round < MAX_TOOL_ROUNDS) {
     round++;
-    const response = await anthropic.messages.create({
+
+    // Stream tokens as they arrive
+    const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       system: systemPrompt,
@@ -255,20 +259,19 @@ export async function sendMessage(
       tools: TOOLS,
     });
 
-    // Collect text blocks and stream them incrementally
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        fullText += block.text;
-        win.webContents.send('ai:stream-chunk', block.text);
-      }
-    }
+    stream.on('text', (text) => {
+      fullText += text;
+      win.webContents.send('ai:stream-chunk', text);
+    });
+
+    const finalMessage = await stream.finalMessage();
 
     // If the model didn't request tool use, we're done
-    if (response.stop_reason !== 'tool_use') break;
+    if (finalMessage.stop_reason !== 'tool_use') break;
 
     // Process tool calls
     const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-    for (const block of response.content) {
+    for (const block of finalMessage.content) {
       if (block.type === 'tool_use') {
         let result: unknown;
         try {
@@ -283,11 +286,9 @@ export async function sendMessage(
           tool_use_id: block.id,
           content: JSON.stringify(result),
         });
-        // Build system log line for the chat
         const logLine = buildToolLog(block.name, block.input as Record<string, unknown>, result);
         if (logLine) {
           toolSystemLogs.push(logLine);
-          // Stream the system log immediately so user sees it
           win.webContents.send('ai:stream-chunk', `\n[SYSTEM] ${logLine}\n`);
           fullText += `\n[SYSTEM] ${logLine}\n`;
         }
@@ -295,18 +296,11 @@ export async function sendMessage(
     }
 
     // Append the assistant's response (with tool_use blocks) and tool results
-    sdkMessages.push({
-      role: 'assistant',
-      content: response.content,
-    });
-    sdkMessages.push({
-      role: 'user',
-      content: toolResults,
-    });
+    sdkMessages.push({ role: 'assistant', content: finalMessage.content });
+    sdkMessages.push({ role: 'user', content: toolResults });
   }
 
-  // Notify UI to refresh AFTER the entire agentic loop completes
-  // This ensures all tool mutations are done before the UI re-fetches
+  // Notify UI to refresh after the full agentic loop
   if (toolSystemLogs.length > 0) {
     win.webContents.send('db:changed');
     win.webContents.send('countdowns-updated');

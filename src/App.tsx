@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CommandCenter from './components/CommandCenter';
 import ChatPanel from './components/ChatPanel';
 import ApiKeySetup from './components/ApiKeySetup';
@@ -35,11 +35,22 @@ export default function App() {
     sendMessage,
     setApiKey,
     clearChat,
+    triggerMorningBriefing,
   } = useAI({ focus, goals, streaks, countdowns });
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
+
+  // Keep a ref so the morning briefing listener always calls the latest version
+  const briefingRef = useRef(triggerMorningBriefing);
+  useEffect(() => { briefingRef.current = triggerMorningBriefing; }, [triggerMorningBriefing]);
+
+  useEffect(() => {
+    if (!isElectron) return;
+    window.pathkeeper.ai.onMorningBriefing(() => briefingRef.current());
+    return () => window.pathkeeper.ai.removeMorningBriefingListener();
+  }, []);
 
   return (
     <div className="relative flex h-screen w-screen bg-bg overflow-hidden">
@@ -50,6 +61,7 @@ export default function App() {
           streaks={streaks}
           tracks={tracks}
           countdowns={countdowns}
+          refreshKey={refreshKey}
           onCompleteTask={completeTask}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />

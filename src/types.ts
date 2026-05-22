@@ -58,6 +58,7 @@ export interface Countdown {
   id: string;
   title: string;
   event_date: string;
+  event_time?: string;
   created_at: string;
 }
 
@@ -92,13 +93,14 @@ export interface PathkeeperAPI {
     completeLesson: (lessonId: string) => Promise<void>;
     getStreaks: () => Promise<Streak[]>;
     getChatHistory: () => Promise<ChatMessage[]>;
-    addChatMessage: (role: string, content: string) => Promise<string>;
+    addChatMessage: (role: string, content: string, model?: string) => Promise<string>;
     clearChatHistory: () => Promise<void>;
     getGoals: () => Promise<Goal[]>;
+    getPreppedTasks: () => Promise<Array<{ id: string; title: string }>>;
     getSetting: (key: string) => Promise<string | null>;
     setSetting: (key: string, value: string) => Promise<void>;
     getCountdowns: () => Promise<Countdown[]>;
-    addCountdown: (title: string, eventDate: string) => Promise<string>;
+    addCountdown: (title: string, eventDate: string, eventTime?: string) => Promise<string>;
     deleteCountdown: (id: string) => Promise<void>;
   };
   ai: {
@@ -113,6 +115,8 @@ export interface PathkeeperAPI {
     removeDataChangedListeners: () => void;
     onCountdownsUpdated: (cb: () => void) => void;
     removeCountdownsUpdatedListeners: () => void;
+    onMorningBriefing: (cb: () => void) => void;
+    removeMorningBriefingListener: () => void;
   };
 }
 

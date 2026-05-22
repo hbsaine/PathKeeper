@@ -37,6 +37,18 @@ function createWindow() {
     mainWin = null;
   });
 
+  // Morning briefing — fire once per day after the renderer is ready
+  win.webContents.once('did-finish-load', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const lastBriefing = db.getSetting('last_briefing_date');
+    if (lastBriefing !== today) {
+      db.setSetting('last_briefing_date', today);
+      setTimeout(() => {
+        if (!win.isDestroyed()) win.webContents.send('ai:morning-briefing');
+      }, 2000);
+    }
+  });
+
   return win;
 }
 
@@ -72,11 +84,12 @@ function registerIPC() {
 
   ipcMain.handle('db:getStreaks', () => db.getStreaks());
   ipcMain.handle('db:getChatHistory', () => db.getChatHistory());
-  ipcMain.handle('db:addChatMessage', (_e, role, content) => db.addChatMessage(role, content));
+  ipcMain.handle('db:addChatMessage', (_e, role, content, model) => db.addChatMessage(role, content, model));
   ipcMain.handle('db:clearChatHistory', () => db.clearChatHistory());
+  ipcMain.handle('db:getPreppedTasks', () => db.getPreppedTasks());
   ipcMain.handle('db:getGoals', () => db.getGoals());
   ipcMain.handle('db:getCountdowns', () => db.getCountdowns());
-  ipcMain.handle('db:addCountdown', (_e, title, event_date) => db.addCountdown(title, event_date));
+  ipcMain.handle('db:addCountdown', (_e, title, event_date, event_time) => db.addCountdown(title, event_date, event_time));
   ipcMain.handle('db:deleteCountdown', (_e, id) => db.deleteCountdown(id));
 
   ipcMain.handle('db:getSetting', (_e, key) => db.getSetting(key));

@@ -37,3 +37,34 @@ export function daysSinceContact(dateStr: string | undefined): number | null {
   if (!dateStr) return null;
   return Math.abs(daysUntil(dateStr));
 }
+
+// Converts "HH:MM" (24h) → "H:MM AM/PM"
+export function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// Returns a human-readable countdown label for the bottom line of a countdown card.
+// - event_time set + under 24h away  → "in Xh Ym" / "in Xm"
+// - same calendar day but no time   → "today"
+// - past                             → "Xd ago"
+// - future                          → "X days away"
+export function formatCountdownDisplay(event_date: string, event_time?: string): string {
+  if (event_time) {
+    const target = new Date(`${event_date}T${event_time}:00`);
+    const diffMs = target.getTime() - Date.now();
+    const diffHours = diffMs / (1000 * 60 * 60);
+    if (diffHours > 0 && diffHours < 24) {
+      const h = Math.floor(diffHours);
+      const m = Math.floor((diffHours - h) * 60);
+      if (h === 0) return `in ${m}m`;
+      return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`;
+    }
+  }
+  const days = daysUntil(event_date);
+  if (days === 0) return 'today';
+  if (days < 0) return `${Math.abs(days)}d ago`;
+  return `${days} days away`;
+}
